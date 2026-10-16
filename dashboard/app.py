@@ -1,38 +1,39 @@
-import os
 import streamlit as st
 import pandas as pd
+from supabase import create_client
+import os
 from dotenv import load_dotenv
-from supabase import create_client, Client
 
-st.set_page_config(page_title="Second Serve | Dashboard", page_icon="🍲", layout="wide")
-st.title("🍲 Second Serve - Live Impact & Verification")
-
-# Connect to Supabase
 load_dotenv()
-supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
-# Fetch Data
-@st.cache_data(ttl=5)
-def get_data():
-    response = supabase.table("food_listings").select("*").execute()
-    return pd.DataFrame(response.data)
+url = os.getenv("SUPABASE_URL")
+key = os.getenv("SUPABASE_KEY")
 
-df = get_data()
+st.set_page_config(page_title="Second Serve - Admin", layout="wide")
+st.title("Second Serve: Operations & Impact")
 
-if df.empty:
-    st.warning("No donations logged yet.")
+if not url or not key:
+    st.error("Missing Supabase credentials in .env file.")
+    st.stop()
+
+supabase = create_client(url, key)
+
+# Test insert button
+if st.button("Insert Test Donation from Local"):
+    res = supabase.table("food_listings").insert({
+        "food_type": "Pipeline Test Food",
+        "quantity_kg": 5.0,
+        "cooked_time": "12:00 PM",
+        "location": "Local Host Test",
+        "status": "available"
+    }).execute()
+    st.success("Inserted row successfully!")
+    st.rerun()
+
+# Fetch & display live rows
+data = supabase.table("food_listings").select("*").order("created_at", desc=True).execute().data
+if data:
+    df = pd.DataFrame(data)
+    st.dataframe(df[["food_type", "quantity_kg", "cooked_time", "location", "status", "created_at"]], use_container_width=True)
 else:
-    # Metrics
-    completed_df = df[df['status'] == 'completed']
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Food Rescued (kg)", completed_df['quantity_kg'].sum() if not completed_df.empty else 0)
-    col2.metric("Active Listings", len(df[df['status'] == 'available']))
-    col3.metric("Verified Distributions", len(completed_df[completed_df['proof_photo_url'].notna()]))
-    
-    st.divider()
-    
-    # Display Feed
-    st.subheader("Live Operations Board")
-    display_df = df[['food_type', 'quantity_kg', 'location', 'status', 'volunteer_name', 'donor_rating', 'volunteer_rating']].copy()
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.info("No listings found.")
